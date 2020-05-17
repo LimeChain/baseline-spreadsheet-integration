@@ -23,7 +23,7 @@ func proxySprintf(pattern string, a ...interface{}) string {
 }
 
 func getSheetsService() (*sheets.Service, error) {
-	data, err := ioutil.ReadFile("./../credentials.json")
+	data, err := ioutil.ReadFile("./credentials.json")
 	if err != nil {
 		return nil, err
 	}
@@ -219,6 +219,63 @@ func updateIncommingMSAs(srv *sheets.Service, spreadsheetID string) (contractsIn
 	return 0, nil
 }
 
+func insertPO(srv *sheets.Service, spreadsheetID string, po baselinePO) (err error) {
+
+	var appendValues sheets.ValueRange
+
+	appendValues.Values = append(appendValues.Values, []interface{}{po.ID, po.MSAID, po.BuyerID})
+
+	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "POs!A2", &appendValues).ValueInputOption("RAW").Do()
+	if err != nil {
+		log.Fatalf("Unable to write PO data to sheet: %v", err)
+		return err
+	}
+	return nil
+}
+
+type baselinePO struct {
+	ID      string `json:"purchaseOrderId"`
+	BuyerID string `json:"buyerId"`
+	MSAID   string `json:"referencedMsaId"`
+}
+
+func updateIncommingPOs(srv *sheets.Service, spreadsheetID string) (POIncrease int, err error) {
+	readRange := "POs!A2"
+	respRead, err := srv.Spreadsheets.Values.Get(spreadsheetID, readRange).Do()
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := http.Get(proxySprintf("/PurchaseOrders"))
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	decoder := json.NewDecoder(resp.Body)
+	var msas []baselinePO
+	err = decoder.Decode(&msas)
+	if err != nil {
+		return 0, err
+	}
+
+	savedPOCount := len(respRead.Values)
+	totalPOCount := len(msas)
+
+	if totalPOCount > savedPOCount {
+		log.Printf("Ok, lets start inserting MSA")
+		newPOs := msas[savedPOCount:]
+		for _, po := range newPOs {
+			err := insertPO(srv, spreadsheetID, po)
+			if err != nil {
+				return 0, err
+			}
+		}
+		return totalPOCount - savedPOCount, nil
+	}
+
+	return 0, nil
+}
+
 type baselineSku struct {
 	ID                string `json:"id"`
 	ProductName       string `json:"ProductName"`
@@ -408,6 +465,7 @@ type incommingUpdates struct {
 	OrderItems int `json:"newOrderItems"`
 	Rfp        int `json:"newRFPs"`
 	Msa        int `json:"newMSAs"`
+	POs        int `json:"newPOs"`
 }
 
 type updateResponse struct {
@@ -428,18 +486,25 @@ func UpdateIncoming(w http.ResponseWriter, r *http.Request) {
 	orderItemsIncrease, rfpsIncrease, err := updateIncommingRFPs(srv, spreadsheetID)
 	if err != nil {
 		log.Fatalf("response %v\n", err)
-		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, incommingUpdates{0, 0, 0}})
+		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, incommingUpdates{0, 0, 0, 0}})
 		return
 	}
 
 	msaIncrease, err := updateIncommingMSAs(srv, spreadsheetID)
 	if err != nil {
 		log.Fatalf("response %v\n", err)
-		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, incommingUpdates{orderItemsIncrease, rfpsIncrease, 0}})
+		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, incommingUpdates{orderItemsIncrease, rfpsIncrease, 0, 0}})
 		return
 	}
 
-	render.JSON(w, r, updateResponse{APIResponse{true, ""}, incommingUpdates{orderItemsIncrease, rfpsIncrease, msaIncrease}})
+	poIncrease, err := updateIncommingPOs(srv, spreadsheetID)
+	if err != nil {
+		log.Fatalf("response %v\n", err)
+		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, incommingUpdates{orderItemsIncrease, rfpsIncrease, msaIncrease, 0}})
+		return
+	}
+
+	render.JSON(w, r, updateResponse{APIResponse{true, ""}, incommingUpdates{orderItemsIncrease, rfpsIncrease, msaIncrease, poIncrease}})
 
 }
 
