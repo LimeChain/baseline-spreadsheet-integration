@@ -146,7 +146,7 @@ func updateIncommingRFPs(srv *sheets.Service, spreadsheetID string) (orderItemsI
 	totalRfpsCount := len(rfps)
 
 	if totalRfpsCount > savedRfpsCount {
-		log.Printf("Ok, lets start inserting")
+		log.Printf("Ok, lets start inserting RFP")
 		orderItemsIncrease = 0
 		newRfps := rfps[savedRfpsCount:]
 		for _, rfp := range newRfps {
@@ -160,6 +160,63 @@ func updateIncommingRFPs(srv *sheets.Service, spreadsheetID string) (orderItemsI
 	}
 
 	return 0, 0, nil
+}
+
+func insertMSA(srv *sheets.Service, spreadsheetID string, msa baselineMSA) (err error) {
+
+	var appendValues sheets.ValueRange
+
+	appendValues.Values = append(appendValues.Values, []interface{}{msa.ID, msa.BuyerID, msa.BuyerBaselineIdentifier})
+
+	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "Contracts!A2", &appendValues).ValueInputOption("RAW").Do()
+	if err != nil {
+		log.Fatalf("Unable to write MSA data to sheet: %v", err)
+		return err
+	}
+	return nil
+}
+
+type baselineMSA struct {
+	ID                      string `json:"masterServiceAgreementID"`
+	BuyerID                 string `json:"buyerId"`
+	BuyerBaselineIdentifier string `json:"buyerBaselineIdentifier"`
+}
+
+func updateIncommingMSAs(srv *sheets.Service, spreadsheetID string) (contractsIncrease int, err error) {
+	readRange := "Contracts!A2"
+	respRead, err := srv.Spreadsheets.Values.Get(spreadsheetID, readRange).Do()
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := http.Get(proxySprintf("/MasterServiceAgreements"))
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	decoder := json.NewDecoder(resp.Body)
+	var msas []baselineMSA
+	err = decoder.Decode(&msas)
+	if err != nil {
+		return 0, err
+	}
+
+	savedMSACount := len(respRead.Values)
+	totalMSACount := len(msas)
+
+	if totalMSACount > savedMSACount {
+		log.Printf("Ok, lets start inserting MSA")
+		newMSAs := msas[savedMSACount:]
+		for _, msa := range newMSAs {
+			err := insertMSA(srv, spreadsheetID, msa)
+			if err != nil {
+				return 0, err
+			}
+		}
+		return totalMSACount - savedMSACount, nil
+	}
+
+	return 0, nil
 }
 
 type baselineSku struct {
@@ -347,15 +404,15 @@ func sendOutgoingProposals(srv *sheets.Service, spreadsheetID string) (sentPropo
 	return sentProposals, nil
 }
 
-type updates struct {
-	OrderItems    int `json:"newOrderItems"`
-	Rfp           int `json:"newRFPs"`
-	SentProposals int `json:"sentProposals"`
+type incommingUpdates struct {
+	OrderItems int `json:"newOrderItems"`
+	Rfp        int `json:"newRFPs"`
+	Msa        int `json:"newMSAs"`
 }
 
 type updateResponse struct {
 	APIResponse
-	Updates updates `json:"updates,omitempty"`
+	Updates incommingUpdates `json:"updates,omitempty"`
 }
 
 func UpdateIncoming(w http.ResponseWriter, r *http.Request) {
@@ -371,12 +428,24 @@ func UpdateIncoming(w http.ResponseWriter, r *http.Request) {
 	orderItemsIncrease, rfpsIncrease, err := updateIncommingRFPs(srv, spreadsheetID)
 	if err != nil {
 		log.Fatalf("response %v\n", err)
-		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, updates{0, 0, 0}})
+		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, incommingUpdates{0, 0, 0}})
 		return
 	}
 
-	render.JSON(w, r, updateResponse{APIResponse{true, ""}, updates{orderItemsIncrease, rfpsIncrease, 0}})
+	msaIncrease, err := updateIncommingMSAs(srv, spreadsheetID)
+	if err != nil {
+		log.Fatalf("response %v\n", err)
+		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, incommingUpdates{orderItemsIncrease, rfpsIncrease, 0}})
+		return
+	}
 
+	render.JSON(w, r, updateResponse{APIResponse{true, ""}, incommingUpdates{orderItemsIncrease, rfpsIncrease, msaIncrease}})
+
+}
+
+type sentProposalsResponse struct {
+	APIResponse
+	ProposalsSent int `json:"proposalsSent,omitempty"`
 }
 
 func SendProposals(w http.ResponseWriter, r *http.Request) {
@@ -392,11 +461,11 @@ func SendProposals(w http.ResponseWriter, r *http.Request) {
 	sentProposals, err := sendOutgoingProposals(srv, spreadsheetID)
 	if err != nil {
 		log.Fatalf("response %v\n", err)
-		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, updates{0, 0, 0}})
+		render.JSON(w, r, sentProposalsResponse{APIResponse{false, err.Error()}, 0})
 		return
 	}
 
-	render.JSON(w, r, updateResponse{APIResponse{true, ""}, updates{0, 0, sentProposals}})
+	render.JSON(w, r, sentProposalsResponse{APIResponse{true, ""}, sentProposals})
 }
 
 func Authenticate(w http.ResponseWriter, r *http.Request) {
@@ -440,32 +509,4 @@ func Authenticate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.JSON(w, r, APIResponse{true, ""})
-}
-
-func UpdateAll(w http.ResponseWriter, r *http.Request) {
-
-	srv, err := getSheetsService()
-
-	if err != nil {
-		log.Fatalf("Unable to retrieve Sheets client: %v", err)
-	}
-
-	spreadsheetID := "1Z_DonR4P5T5xyjKODgDyyF3BgQG7eObodl8d1IWxS6s"
-
-	orderItemsIncrease, rfpsIncrease, err := updateIncommingRFPs(srv, spreadsheetID)
-	if err != nil {
-		log.Fatalf("response %v\n", err)
-		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, updates{0, 0, 0}})
-		return
-	}
-
-	sentProposals, err := sendOutgoingProposals(srv, spreadsheetID)
-	if err != nil {
-		log.Fatalf("response %v\n", err)
-		render.JSON(w, r, updateResponse{APIResponse{false, err.Error()}, updates{0, 0, 0}})
-		return
-	}
-
-	render.JSON(w, r, updateResponse{APIResponse{true, ""}, updates{orderItemsIncrease, rfpsIncrease, sentProposals}})
-
 }

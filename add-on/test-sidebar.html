@@ -44,23 +44,25 @@
 <body>
 	<div class="sidebar branding-below">
 		<p>Welcome to the demo baseline protocol integrator. Using the buttons below you will be able to interact with your baseline group.</p>
-		<hr />
+		<div id="auth">
+			<hr />
+			<form>
+				<div class="block">
+					<b>Authenticate</b>
+					<p>Enter your baseline node authentication credentials</p>
+					<label for="node-url">Node URL:</label><br>
+					<input type="text" id="node-url" name="node-url" value="https://us-central1-baseline-spreadsheet.cloudfunctions.net"><br>
+					<label for="email">Email:</label><br>
+					<input type="email" id="email" name="email"><br>
+					<label for="pass">Password:</label><br>
+					<input type="password" id="pass" name="pass">
+					<button class="blue" id="send-authenticate">Authenticate</button>
+				</div>
+			</form>
+			<hr />
+		</div>
 		<form>
-			<div class="block" id="button-bar">
-				<b>Authenticate</b>
-				<p>Enter your baseline node authentication credentials</p>
-				<label for="node-url">Node URL:</label><br>
-				<input type="text" id="node-url" name="node-url"><br>
-				<label for="email">Email:</label><br>
-				<input type="email" id="email" name="email"><br>
-				<label for="pass">Password:</label><br>
-				<input type="password" id="pass" name="pass">
-				<button class="blue" id="send-authenticate">Authenticate</button>
-			</div>
-		</form>
-		<hr />
-		<form>
-			<div class="block" id="button-bar">
+			<div class="block" id="proposals">
 				<b>Proposals</b>
 				<p>Click the button bellow to send the pending proposals to the baseline group</p>
 				<button class="blue" id="send-proposals">Send Pending Proposals</button>
@@ -68,7 +70,7 @@
 		</form>
 		<hr />
 		<form>
-			<div class="block" id="button-bar">
+			<div class="block" id="pos">
 				<b>Purchase Orders</b>
 				<p>Click the button bellow to send the pending purchase orders to the baseline group</p>
 				<button class="blue" id="send-proposals">Send Pending POs</button>
@@ -91,7 +93,9 @@
 		function authenticate() {
 			google.script.run
 				.withSuccessHandler(
-					function () {})
+					function () {
+						$("#auth").hide()
+					})
 				.withFailureHandler(
 					function (msg, element) {
 						showError(msg, $('#send-authenticate'));
