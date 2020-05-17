@@ -23,7 +23,7 @@ func proxySprintf(pattern string, a ...interface{}) string {
 }
 
 func getSheetsService() (*sheets.Service, error) {
-	data, err := ioutil.ReadFile("./credentials.json")
+	data, err := ioutil.ReadFile("./../credentials.json")
 	if err != nil {
 		return nil, err
 	}
