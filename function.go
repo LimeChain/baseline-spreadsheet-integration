@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 )
@@ -23,7 +22,7 @@ func proxySprintf(pattern string, a ...interface{}) string {
 }
 
 func getSheetsService() (*sheets.Service, error) {
-	data, err := ioutil.ReadFile("./credentials.json")
+	data, err := ioutil.ReadFile("./../credentials.json")
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +62,7 @@ func appendOrderItem(srv *sheets.Service, spreadsheetID string, rfpId string, o 
 func appendRfp(srv *sheets.Service, spreadsheetID string, rfp rfpResponse) (err error) {
 	var appendValues sheets.ValueRange
 
-	appendValues.Values = append(appendValues.Values, []interface{}{rfp.RequestForProposalID, "Buyer", strconv.Itoa(len(rfp.Items)), rfp.LatestDeliveryDate})
+	appendValues.Values = append(appendValues.Values, []interface{}{rfp.RequestForProposalID, "USMF - Contoso Entertainment System USA", strconv.Itoa(len(rfp.Items)), rfp.LatestDeliveryDate})
 
 	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "RFPS!A2", &appendValues).ValueInputOption("RAW").Do()
 	if err != nil {
@@ -305,7 +304,7 @@ func getSKU(skuID string, skus [][]interface{}, buyerId string) (sku baselineSku
 			continue
 		}
 
-		return baselineSku{fmt.Sprintf("%s", row[0]), fmt.Sprintf("%s", row[1]), buyerId, fmt.Sprintf("%s", row[0])}, nil
+		return baselineSku{fmt.Sprintf("%s", row[0]), fmt.Sprintf("%s", row[1]), buyerId, fmt.Sprintf("%s", row[0])}, nil // Remove id
 	}
 
 	return sku, fmt.Errorf("Could not find sku with id %v", skuID)
@@ -359,6 +358,8 @@ func createProposal(proposal []interface{}, priceScales [][]interface{}, skus []
 
 func sendProposal(proposal *baselineProposal) error {
 	jsonValue, _ := json.Marshal(proposal)
+
+	fmt.Println(string(jsonValue))
 
 	resp, err := http.Post(proxySprintf("/Proposals"), "application/json", bytes.NewBuffer(jsonValue))
 	defer resp.Body.Close()
@@ -533,6 +534,11 @@ func SendProposals(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, sentProposalsResponse{APIResponse{true, ""}, sentProposals})
 }
 
+type proxyCredentials struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 func Authenticate(w http.ResponseWriter, r *http.Request) {
 
 	emails, ok := r.URL.Query()["email"]
@@ -555,13 +561,11 @@ func Authenticate(w http.ResponseWriter, r *http.Request) {
 
 	password := passwords[0]
 
-	params := url.Values{}
-	params.Add("email", email)
-	params.Add("password", password)
+	credentials := proxyCredentials{email, password}
 
-	fmt.Println(params.Encode())
+	jsonValue, _ := json.Marshal(credentials)
 
-	resp, err := http.Post(proxySprintf("/Authentication?%s", params.Encode()), "application/json", bytes.NewBufferString(""))
+	resp, err := http.Post(proxySprintf("/Authentication"), "application/json", bytes.NewBuffer(jsonValue))
 	defer resp.Body.Close()
 	if err != nil {
 		render.JSON(w, r, APIResponse{false, err.Error()})
