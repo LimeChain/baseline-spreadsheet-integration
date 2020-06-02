@@ -5,8 +5,17 @@
 function onEdit(e) {
   // Set a comment on the edited cell to indicate when it was changed.
   //var range = e.range;
-  //range.setNote('Last modified: ' + new Date());
-  Logger.log(e.range.getColumn())
+
+  Logger.log(e.range)
+  Logger.log(e.source)
+  Logger.log(e.source.getId())
+  Logger.log(e.source.getName())
+  Logger.log(e.source.getSheetId())
+  Logger.log(e.source.getSheetName())
+  if(e.source.getSheetName() == "Proposals" || e.source.getSheetName() == "Proposal_Tiers") {
+    return
+  }
+  e.range.setNote('Baselined. Last update: ' + new Date());
 }
 
 function onOpen(e) {
