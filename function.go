@@ -22,7 +22,7 @@ func proxySprintf(pattern string, a ...interface{}) string {
 }
 
 func getSheetsService() (*sheets.Service, error) {
-	data, err := ioutil.ReadFile("./../credentials.json")
+	data, err := ioutil.ReadFile("./credentials.json")
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func appendOrderItem(srv *sheets.Service, spreadsheetID string, rfpId string, o 
 
 	appendValues.Values = append(appendValues.Values, []interface{}{rfpId, strconv.Itoa(o.OrderItemID), o.SKUBuyer, fmt.Sprintf("%f", o.Quantity), o.Unit})
 
-	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "Order_Items!A2", &appendValues).ValueInputOption("RAW").Do()
+	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "Order_Items!A2", &appendValues).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
 		log.Fatalf("Unable to write orderItems data to sheet: %v", err)
 		return err
@@ -64,7 +64,7 @@ func appendRfp(srv *sheets.Service, spreadsheetID string, rfp rfpResponse) (err 
 
 	appendValues.Values = append(appendValues.Values, []interface{}{rfp.RequestForProposalID, "USMF - Contoso Entertainment System USA", strconv.Itoa(len(rfp.Items)), rfp.LatestDeliveryDate})
 
-	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "RFPS!A2", &appendValues).ValueInputOption("RAW").Do()
+	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "RFPS!A2", &appendValues).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
 		log.Fatalf("Unable to write RFP data to sheet: %v", err)
 		return err
@@ -165,9 +165,9 @@ func insertMSA(srv *sheets.Service, spreadsheetID string, msa baselineMSA) (err 
 
 	var appendValues sheets.ValueRange
 
-	appendValues.Values = append(appendValues.Values, []interface{}{msa.ID, msa.BuyerID, msa.BuyerBaselineIdentifier})
+	appendValues.Values = append(appendValues.Values, []interface{}{msa.ID, msa.BuyerID, msa.BuyerBaselineIdentifier}) // TODO match to SKUs
 
-	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "Contracts!A2", &appendValues).ValueInputOption("RAW").Do()
+	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "Contracts!A2", &appendValues).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
 		log.Fatalf("Unable to write MSA data to sheet: %v", err)
 		return err
@@ -224,7 +224,7 @@ func insertPO(srv *sheets.Service, spreadsheetID string, po baselinePO) (err err
 
 	appendValues.Values = append(appendValues.Values, []interface{}{po.ID, po.MSAID, po.BuyerID})
 
-	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "POs!A2", &appendValues).ValueInputOption("RAW").Do()
+	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "POs!A2", &appendValues).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
 		log.Fatalf("Unable to write PO data to sheet: %v", err)
 		return err
@@ -386,7 +386,7 @@ func markProposalSent(proposalID string, srv *sheets.Service, spreadsheetID stri
 
 	updateValues.Values = append(updateValues.Values, []interface{}{"Yes"})
 
-	_, err = srv.Spreadsheets.Values.Update(spreadsheetID, updateRange, &updateValues).ValueInputOption("RAW").Do()
+	_, err = srv.Spreadsheets.Values.Update(spreadsheetID, updateRange, &updateValues).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
 		log.Fatalf("Unable to write update proposal data to sheet: %v", err)
 		return err
