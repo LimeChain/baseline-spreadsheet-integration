@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-var proxyURL = "https://ubsapradishproxy.azurewebsites.net/api"
+var proxyURL = "http://b9bdbccebe7d.ngrok.io/api"
 
 func proxySprintf(pattern string, a ...interface{}) string {
 	return fmt.Sprintf(proxyURL+pattern, a...)
@@ -49,9 +49,9 @@ func getOrderItemsCount(srv *sheets.Service, spreadsheetID string) (count int, e
 func appendOrderItem(srv *sheets.Service, spreadsheetID string, rfpId string, o orderItem) (err error) {
 	var appendValues sheets.ValueRange
 
-	appendValues.Values = append(appendValues.Values, []interface{}{rfpId, strconv.Itoa(o.OrderItemID), o.SKUBuyer, fmt.Sprintf("%f", o.Quantity), o.Unit})
+	appendValues.Values = append(appendValues.Values, []interface{}{rfpId, strconv.Itoa(o.OrderItemID), o.SKUBuyer, o.SKUSupplier, fmt.Sprintf("%f", o.Quantity), o.Unit})
 
-	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "Order_Items!A2", &appendValues).ValueInputOption("USER_ENTERED").Do()
+	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "Order_Items!A2:A", &appendValues).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
 		log.Fatalf("Unable to write orderItems data to sheet: %v", err)
 		return err
@@ -61,6 +61,8 @@ func appendOrderItem(srv *sheets.Service, spreadsheetID string, rfpId string, o 
 
 func appendRfp(srv *sheets.Service, spreadsheetID string, rfp rfpResponse) (err error) {
 	var appendValues sheets.ValueRange
+
+	fmt.Println(rfp.RequestForProposalID)
 
 	appendValues.Values = append(appendValues.Values, []interface{}{rfp.RequestForProposalID, "USMF - Contoso Entertainment System USA", strconv.Itoa(len(rfp.Items)), rfp.LatestDeliveryDate})
 
@@ -75,6 +77,7 @@ func appendRfp(srv *sheets.Service, spreadsheetID string, rfp rfpResponse) (err 
 type orderItem struct {
 	OrderItemID int     `json:"orderItemId"`
 	SKUBuyer    string  `json:"skuBuyer"`
+	SKUSupplier string  `json:"skuSupplier"`
 	Quantity    float32 `json:"quantity"`
 	Unit        string  `json:"unit"`
 }
@@ -123,7 +126,7 @@ type baselineRFP struct {
 }
 
 func updateIncommingRFPs(srv *sheets.Service, spreadsheetID string) (orderItemsIncrease, rfpsIncrease int, err error) {
-	readRange := "RFPS!A2"
+	readRange := "RFPS!A2:A"
 	respRead, err := srv.Spreadsheets.Values.Get(spreadsheetID, readRange).Do()
 	if err != nil {
 		return 0, 0, err
@@ -144,6 +147,8 @@ func updateIncommingRFPs(srv *sheets.Service, spreadsheetID string) (orderItemsI
 	savedRfpsCount := len(respRead.Values)
 	totalRfpsCount := len(rfps)
 
+	fmt.Println(savedRfpsCount, totalRfpsCount)
+
 	if totalRfpsCount > savedRfpsCount {
 		log.Printf("Ok, lets start inserting RFP")
 		orderItemsIncrease = 0
@@ -163,11 +168,18 @@ func updateIncommingRFPs(srv *sheets.Service, spreadsheetID string) (orderItemsI
 
 func insertMSA(srv *sheets.Service, spreadsheetID string, msa baselineMSA) (err error) {
 
+	var sb strings.Builder
+
+	for _, sku := range msa.BaselineSku {
+		sb.WriteString(sku.SupplierProductId)
+		sb.WriteString(", ")
+	}
+
 	var appendValues sheets.ValueRange
 
-	appendValues.Values = append(appendValues.Values, []interface{}{msa.ID, msa.BuyerID, msa.BuyerBaselineIdentifier}) // TODO match to SKUs
+	appendValues.Values = append(appendValues.Values, []interface{}{msa.ID, msa.BuyerID, msa.SupplierID, sb.String()}) // TODO match to SKUs
 
-	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "Contracts!A2", &appendValues).ValueInputOption("USER_ENTERED").Do()
+	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "Contracts!A2:A", &appendValues).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
 		log.Fatalf("Unable to write MSA data to sheet: %v", err)
 		return err
@@ -176,9 +188,10 @@ func insertMSA(srv *sheets.Service, spreadsheetID string, msa baselineMSA) (err 
 }
 
 type baselineMSA struct {
-	ID                      string `json:"masterServiceAgreementID"`
-	BuyerID                 string `json:"buyerId"`
-	BuyerBaselineIdentifier string `json:"buyerBaselineIdentifier"`
+	ID          string        `json:"masterServiceAgreementID"`
+	BuyerID     string        `json:"buyerId"`
+	SupplierID  string        `json:"SupplierId"`
+	BaselineSku []baselineSku `json:"Skus"`
 }
 
 func updateIncommingMSAs(srv *sheets.Service, spreadsheetID string) (contractsIncrease int, err error) {
@@ -218,24 +231,46 @@ func updateIncommingMSAs(srv *sheets.Service, spreadsheetID string) (contractsIn
 	return 0, nil
 }
 
-func insertPO(srv *sheets.Service, spreadsheetID string, po baselinePO) (err error) {
-
+func appendPOOrderItem(srv *sheets.Service, spreadsheetID string, poId string, o orderItem) (err error) {
 	var appendValues sheets.ValueRange
 
-	appendValues.Values = append(appendValues.Values, []interface{}{po.ID, po.MSAID, po.BuyerID})
+	appendValues.Values = append(appendValues.Values, []interface{}{poId, strconv.Itoa(o.OrderItemID), o.SKUBuyer, o.SKUSupplier, fmt.Sprintf("%f", o.Quantity), o.Unit})
 
-	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "POs!A2", &appendValues).ValueInputOption("USER_ENTERED").Do()
+	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "PO_Items!A2:A", &appendValues).ValueInputOption("USER_ENTERED").Do()
 	if err != nil {
-		log.Fatalf("Unable to write PO data to sheet: %v", err)
+		log.Fatalf("Unable to write orderItems data to sheet: %v", err)
 		return err
 	}
 	return nil
 }
 
+func insertPO(srv *sheets.Service, spreadsheetID string, po baselinePO) (err error) {
+
+	var appendValues sheets.ValueRange
+
+	appendValues.Values = append(appendValues.Values, []interface{}{po.ID, po.MSAID, po.BuyerID, strconv.Itoa(len(po.OrderItems))})
+
+	_, err = srv.Spreadsheets.Values.Append(spreadsheetID, "POs!A2:A", &appendValues).ValueInputOption("USER_ENTERED").Do()
+	if err != nil {
+		log.Fatalf("Unable to write PO data to sheet: %v", err)
+		return err
+	}
+
+	for _, o := range po.OrderItems {
+		err = appendPOOrderItem(srv, spreadsheetID, po.ID, o)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 type baselinePO struct {
-	ID      string `json:"purchaseOrderId"`
-	BuyerID string `json:"buyerId"`
-	MSAID   string `json:"referencedMsaId"`
+	ID         string      `json:"purchaseOrderId"`
+	BuyerID    string      `json:"buyerId"`
+	MSAID      string      `json:"referencedMsaId"`
+	OrderItems []orderItem `json:"OrderItems"`
 }
 
 func updateIncommingPOs(srv *sheets.Service, spreadsheetID string) (POIncrease int, err error) {
@@ -294,6 +329,7 @@ type baselinePriceScale struct {
 type baselineProposal struct {
 	ProposalID      string               `json:"ProposalId"`
 	BuyerID         string               `json:"BuyerId"`
+	SupplierID      string               `json:"SupplierId"`
 	ReferencedRfpID string               `json:"ReferencedRfpId"`
 	PriceScales     []baselinePriceScale `json:"priceScales"`
 }
@@ -352,7 +388,7 @@ func createProposal(proposal []interface{}, priceScales [][]interface{}, skus []
 			return b, err
 		}
 	}
-	b = &baselineProposal{fmt.Sprintf("%s", proposal[0]), fmt.Sprintf("%s", proposal[1]), fmt.Sprintf("%s", proposal[2]), proposalPriceScales}
+	b = &baselineProposal{fmt.Sprintf("%s", proposal[0]), fmt.Sprintf("%s", proposal[1]), "ACME GSheet", fmt.Sprintf("%s", proposal[2]), proposalPriceScales}
 	return b, nil
 }
 
